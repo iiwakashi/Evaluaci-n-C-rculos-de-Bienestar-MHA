@@ -1,6 +1,9 @@
 from io import BytesIO
 
 from openpyxl import Workbook
+from openpyxl import load_workbook as load_exported_workbook
+
+from bienestar.exports import comparison_summary_rows, comparison_summary_xlsx, person_view_pdf
 
 from bienestar.workbook import (
     _match_response_column,
@@ -110,3 +113,58 @@ def test_setup_sheet_without_space_is_accepted():
     loaded.save(output)
     parsed = load_workbook("setup_sin_espacio.xlsx", output.getvalue())
     assert parsed.ok, parsed.errors
+
+
+def test_downloads_include_all_comparable_people_and_selected_view():
+    entry = load_workbook(
+        "entrada.xlsx",
+        make_workbook(
+            [
+                ("00123", "Persona Uno", [1, 2, 3, 2]),
+                ("00456", "Persona Dos", [3, 3, 2, 1]),
+            ]
+        ),
+    )
+    exit_ = load_workbook(
+        "salida.xlsx",
+        make_workbook(
+            [
+                ("00123", "Persona Uno", [2, 1, 3, 3]),
+                ("00456", "Persona Dos", [2, 3, 2, 2]),
+            ]
+        ),
+    )
+    comparison, errors = compare_workbooks(entry, exit_)
+    assert not errors
+
+    rows = comparison_summary_rows(comparison)
+    assert rows == [
+        {
+            "Nombre": "Persona Dos",
+            "Cédula": "00456",
+            "Mejoran": 1,
+            "Empeoran": 1,
+            "No cambian": 2,
+            "Resultado neto": 0,
+        },
+        {
+            "Nombre": "Persona Uno",
+            "Cédula": "00123",
+            "Mejoran": 2,
+            "Empeoran": 1,
+            "No cambian": 1,
+            "Resultado neto": 1,
+        },
+    ]
+
+    xlsx_bytes = comparison_summary_xlsx(comparison)
+    exported = load_exported_workbook(BytesIO(xlsx_bytes), read_only=True)
+    values = list(exported["Resumen"].values)
+    exported.close()
+    assert values[0] == ("Nombre", "Cédula", "Mejoran", "Empeoran", "No cambian", "Resultado neto")
+    assert values[1] == ("Persona Dos", "00456", 1, 1, 2, 0)
+
+    evolution, metrics = person_evolution(comparison, "00123")
+    pdf_bytes = person_view_pdf("Persona Uno", evolution, metrics)
+    assert pdf_bytes.startswith(b"%PDF")
+    assert len(pdf_bytes) > 2_000

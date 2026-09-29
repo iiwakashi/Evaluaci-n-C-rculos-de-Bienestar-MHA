@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from bienestar.exports import comparison_summary_xlsx, person_view_pdf
 from bienestar.visualization import APP_CSS, LEGEND_HTML, evolution_html, summary_html
 from bienestar.workbook import compare_workbooks, load_workbook, person_evolution
 
@@ -36,34 +37,50 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-entry_file = st.file_uploader(
-    "1. Cargue el archivo de entrada",
-    type=("xlsx", "xlsm"),
-    key="entry_file",
-)
+if "validated_files" not in st.session_state:
+    st.session_state.validated_files = None
 
-if entry_file is None:
-    st.info("La aplicación comenzará validando las hojas RESPUESTAS y SET UP del archivo de entrada.")
-    st.stop()
+if st.session_state.validated_files is None:
+    entry_file = st.file_uploader(
+        "1. Cargue el archivo de entrada",
+        type=("xlsx", "xlsm"),
+        key="entry_file",
+    )
 
-entry = parse_uploaded_workbook(entry_file.name, entry_file.getvalue())
-show_validation("Entrada", entry)
-if not entry.ok:
-    st.stop()
+    if entry_file is None:
+        st.info("La aplicación comenzará validando las hojas RESPUESTAS y SET UP del archivo de entrada.")
+        st.stop()
 
-exit_file = st.file_uploader(
-    "2. Cargue el archivo de salida",
-    type=("xlsx", "xlsm"),
-    key="exit_file",
-)
-if exit_file is None:
-    st.info("El archivo de entrada está listo. Cargue ahora el archivo de salida.")
-    st.stop()
+    entry = parse_uploaded_workbook(entry_file.name, entry_file.getvalue())
+    show_validation("Entrada", entry)
+    if not entry.ok:
+        st.stop()
 
-exit_data = parse_uploaded_workbook(exit_file.name, exit_file.getvalue())
-show_validation("Salida", exit_data)
-if not exit_data.ok:
-    st.stop()
+    exit_file = st.file_uploader(
+        "2. Cargue el archivo de salida",
+        type=("xlsx", "xlsm"),
+        key="exit_file",
+    )
+    if exit_file is None:
+        st.info("El archivo de entrada está listo. Cargue ahora el archivo de salida.")
+        st.stop()
+
+    exit_data = parse_uploaded_workbook(exit_file.name, exit_file.getvalue())
+    show_validation("Salida", exit_data)
+    if not exit_data.ok:
+        st.stop()
+
+    st.session_state.validated_files = {
+        "entry_name": entry_file.name,
+        "entry_content": entry_file.getvalue(),
+        "exit_name": exit_file.name,
+        "exit_content": exit_file.getvalue(),
+    }
+    st.rerun()
+
+stored_files = st.session_state.validated_files
+entry = parse_uploaded_workbook(stored_files["entry_name"], stored_files["entry_content"])
+exit_data = parse_uploaded_workbook(stored_files["exit_name"], stored_files["exit_content"])
 
 comparison, comparison_errors = compare_workbooks(entry, exit_data)
 if comparison_errors:
@@ -71,7 +88,15 @@ if comparison_errors:
         st.error(message, icon="🚫")
     st.stop()
 
-st.success(f"Comparación lista · {len(comparison.people)} personas presentes en ambos momentos")
+status_column, action_column = st.columns([5, 1])
+with status_column:
+    st.success(f"Comparación lista · {len(comparison.people)} personas presentes en ambos momentos")
+with action_column:
+    if st.button("Cambiar archivos", use_container_width=True):
+        st.session_state.validated_files = None
+        st.session_state.pop("entry_file", None)
+        st.session_state.pop("exit_file", None)
+        st.rerun()
 if comparison.only_entry or comparison.only_exit:
     st.warning(
         f"Sin pareja de comparación: {comparison.only_entry} solo en entrada y "
@@ -97,3 +122,27 @@ evolution, metrics = person_evolution(comparison, selected_id)
 st.markdown(evolution_html(evolution), unsafe_allow_html=True)
 st.markdown(summary_html(metrics), unsafe_allow_html=True)
 
+pdf_bytes = person_view_pdf(selected_row["_display_name"], evolution, metrics)
+xlsx_bytes = comparison_summary_xlsx(comparison)
+safe_name = "".join(
+    character
+    for character in selected_row["_display_name"]
+    if character.isalnum() or character in " _-"
+).strip()
+download_pdf, download_xlsx = st.columns(2)
+with download_pdf:
+    st.download_button(
+        "Descargar vista individual en PDF",
+        data=pdf_bytes,
+        file_name=f"evolucion_{safe_name or selected_id}.pdf",
+        mime="application/pdf",
+        use_container_width=True,
+    )
+with download_xlsx:
+    st.download_button(
+        "Descargar resumen de personas en Excel",
+        data=xlsx_bytes,
+        file_name="resumen_personas_comparables.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+    )

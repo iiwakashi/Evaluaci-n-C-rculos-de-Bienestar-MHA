@@ -11,6 +11,9 @@ Aplicación Streamlit para comparar las mediciones de entrada y salida de los C�
 5. Clasifica cada respuesta con las reglas del archivo: rojo = 1, amarillo = 2 y verde = 3.
 6. Muestra todos los indicadores con un círculo pequeño para entrada y uno grande para salida.
 7. Calcula cuatro métricas para la persona seleccionada: mejoran, empeoran, siguen igual y resultado neto.
+8. Oculta los controles de carga después de validar ambos archivos y permite reemplazarlos con `Cambiar archivos`.
+9. Descarga la vista individual en PDF carta horizontal.
+10. Descarga un Excel con nombre, cédula y las cuatro métricas de todas las personas comparables.
 
 El resultado neto es `indicadores que mejoran - indicadores que empeoran`.
 
@@ -46,4 +49,3 @@ python -m pytest
 ```
 
 Las pruebas crean libros sintéticos; no utilizan información personal ni archivos de producción.
-
